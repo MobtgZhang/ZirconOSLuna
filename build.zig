@@ -153,4 +153,92 @@ pub fn build(b: *std.Build) void {
     //
     // Lastly, the Zig build system is relatively simple and self-contained,
     // and reading its source code will allow you to master it.
+
+    // --- 内核可执行（x86-64 Multiboot2）---
+    const boot_method = b.option([]const u8, "boot-method", "mbr|uefi") orelse "mbr";
+    // 默认与 build.conf / scripts/fetch-ovmf.sh（edk2-nightly RELEASE X64）一致
+    const ovmf_code = b.option([]const u8, "ovmf-code", "") orelse "firmware/ovmf/RELEASEX64_OVMF_CODE.fd";
+    const ovmf_vars_src = b.option([]const u8, "ovmf-vars", "") orelse "firmware/ovmf/RELEASEX64_OVMF_VARS.fd";
+    const kernel_desktop = b.option([]const u8, "kernel-desktop", "none|cmd") orelse "cmd";
+    const kernel_line = b.option([]const u8, "kernel-version-string", "") orelse "ZirconOSLuna Kernel [x86-64] CMD — NT 5.2 ref";
+    const kernel_debug_log = b.option(bool, "kernel-debug-log", "Verbose COM1 boot log (mmap/PMM/MM); false for quiet Release") orelse (optimize == .Debug);
+
+    const kernel_target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .freestanding,
+        .abi = .none,
+    });
+    const kernel_mod = b.createModule(.{
+        .root_source_file = b.path("src/kernel/entry.zig"),
+        .target = kernel_target,
+        .optimize = optimize,
+        .single_threaded = true,
+        .link_libc = false,
+        .red_zone = false,
+    });
+    const kernel_build_cfg = b.addOptions();
+    kernel_build_cfg.addOption([]const u8, "desktop", kernel_desktop);
+    kernel_build_cfg.addOption([]const u8, "kernel_line", kernel_line);
+    kernel_build_cfg.addOption(bool, "kernel_debug_log", kernel_debug_log);
+    kernel_mod.addOptions("build_config", kernel_build_cfg);
+    const kernel = b.addExecutable(.{
+        .name = "zirconosluna-kernel",
+        .root_module = kernel_mod,
+    });
+    kernel.image_base = 0x100000;
+    kernel.setLinkerScript(b.path("link/x86_64_kernel.ld"));
+    kernel.root_module.addAssemblyFile(b.path("boot/entry.S"));
+    kernel.root_module.addAssemblyFile(b.path("boot/isr_x86_64.S"));
+    kernel.root_module.addAssemblyFile(b.path("boot/idt_load.S"));
+    b.installArtifact(kernel);
+
+    const zbm_target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .uefi,
+        .abi = .msvc,
+    });
+    const zbm_mod = b.createModule(.{
+        .root_source_file = b.path("boot/zbm/main.zig"),
+        .target = zbm_target,
+        .optimize = optimize,
+    });
+    const zbm = b.addExecutable(.{
+        .name = "BOOTX64",
+        .root_module = zbm_mod,
+    });
+    zbm.root_module.addAssemblyFile(b.path("boot/zbm/trampoline.S"));
+    b.installArtifact(zbm);
+
+    const kernel_step = b.step("kernel", "Build x86-64 kernel (Multiboot2)");
+    kernel_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
+
+    const kernel_bin_path = b.pathJoin(&.{ b.install_path, "bin", "zirconosluna-kernel" });
+    const zbm_bin_path = b.pathJoin(&.{ b.install_path, "bin", "BOOTX64.efi" });
+    const iso_path = b.pathJoin(&.{ b.install_path, "zirconosluna.iso" });
+    const mk_iso = b.addSystemCommand(&.{ "bash", "scripts/mk-iso.sh", zbm_bin_path, kernel_bin_path, iso_path });
+    mk_iso.step.dependOn(b.getInstallStep());
+    const iso_step = b.step("iso", "Build UEFI ISO (ZirconOS Boot Manager + kernel)");
+    iso_step.dependOn(&mk_iso.step);
+
+    const run_kernel_step = b.step("run-kernel", "Run kernel in QEMU (ZBM UEFI ISO; scripts/run-qemu.sh)");
+    const qemu_bin = b.option([]const u8, "qemu", "Path to qemu-system-x86_64") orelse "qemu-system-x86_64";
+    const qemu_mem = b.option([]const u8, "qemu-mem", "QEMU guest memory (e.g. 512M)") orelse "512M";
+    // 默认图形窗口；-Dqemu-nographic=true 时无窗口、COM1 走 stdio。
+    const qemu_nographic = b.option(bool, "qemu-nographic", "Headless QEMU (no GUI, serial on stdio only)") orelse false;
+
+    const ovmf_vars_dst = b.pathJoin(&.{ b.install_path, "ovmf_vars.fd" });
+    const run_kernel_cmd = b.addSystemCommand(&.{
+        "bash",
+        "scripts/run-qemu.sh",
+        qemu_bin,
+        qemu_mem,
+        iso_path,
+        boot_method,
+        ovmf_code,
+        ovmf_vars_dst,
+        ovmf_vars_src,
+        if (qemu_nographic) "1" else "0",
+    });
+    run_kernel_cmd.step.dependOn(&mk_iso.step);
+    run_kernel_step.dependOn(&run_kernel_cmd.step);
 }

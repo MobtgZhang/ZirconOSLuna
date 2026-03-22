@@ -1,3 +1,5 @@
 .zig-cache/
 zig-out/
 *.o
+# edk2-nightly 下载的 OVMF（见 scripts/fetch-ovmf.sh）
+firmware/ovmf/*.fd

@@ -4,6 +4,8 @@
 //! Reference: ReactOS explorer shell (base/shell/explorer/)
 
 const theme = @import("theme.zig");
+const resources = @import("resources.zig");
+const render = @import("render.zig");
 
 pub const COLORREF = theme.COLORREF;
 
@@ -248,12 +250,14 @@ pub fn setWallpaper(path: []const u8, style: WallpaperStyle) void {
     wallpaper.path_len = n;
     wallpaper.style = style;
     wallpaper.is_set = true;
+    render.invalidateDesktopArea();
 }
 
 pub fn setWallpaperColor(color: COLORREF) void {
     wallpaper.style = .solid_color;
     wallpaper.solid_color = color;
     wallpaper.is_set = true;
+    render.invalidateDesktopArea();
 }
 
 pub fn getWallpaper() *const Wallpaper {
@@ -312,10 +316,27 @@ pub fn getSettings() *const DesktopSettings {
     return &settings;
 }
 
+/// Path to packaged PNG for a standard shell icon (host image loader).
+pub fn defaultIconResourcePath(icon_type: IconType) []const u8 {
+    return switch (icon_type) {
+        .my_computer => resources.icons.my_computer,
+        .my_documents => resources.icons.my_documents,
+        .network_places => resources.icons.network,
+        .recycle_bin => resources.icons.recycle_empty,
+        .internet_explorer => resources.icons.my_computer,
+        .folder => resources.icons.my_documents,
+        .file => resources.icons.my_documents,
+        .shortcut => resources.icons.my_documents,
+        .control_panel => resources.icons.control_panel,
+    };
+}
+
 pub fn setDesktopSize(width: i32, height: i32) void {
     desktop_width = width;
     desktop_height = height;
     rearrangeIcons();
+    render.setScreenSize(width, height);
+    render.invalidateDesktopArea();
 }
 
 pub fn getDesktopSize() struct { width: i32, height: i32 } {
@@ -347,8 +368,7 @@ pub fn init() void {
     context_menu = .{};
     settings = .{};
 
-    const colors = theme.getColors();
-    setWallpaperColor(colors.desktop_background);
+    setWallpaper(resources.wallpaperPathForScheme(theme.getColorScheme()), .stretch);
     createSystemIcons();
 
     desktop_initialized = true;

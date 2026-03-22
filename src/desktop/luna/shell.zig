@@ -4,6 +4,8 @@
 //! Reference: ReactOS explorer (base/shell/explorer/)
 
 const theme = @import("theme.zig");
+const render = @import("render.zig");
+const host_abi = @import("host_abi.zig");
 const winlogon = @import("winlogon.zig");
 const desktop = @import("desktop.zig");
 const taskbar = @import("taskbar.zig");
@@ -91,6 +93,8 @@ pub fn start(cfg: ShellConfig) void {
     config = cfg;
     shell_state = .initializing;
 
+    render.init(cfg.screen_width, cfg.screen_height);
+
     theme.init();
     theme.setColorScheme(cfg.color_scheme);
 
@@ -144,12 +148,9 @@ pub fn handleEvent(event: ShellEvent, param1: i32, param2: i32) void {
     }
 }
 
-fn handleLoginEvent(event: ShellEvent, param1: i32, param2: i32) void {
+fn handleLoginEvent(event: ShellEvent, param1: i32, _: i32) void {
     switch (event) {
-        .mouse_left_down => {
-            _ = param1;
-            _ = param2;
-        },
+        .mouse_left_down => {},
         .key_down => {
             const key: u8 = @intCast(param1 & 0xFF);
             if (key == 0x0D) {
@@ -231,18 +232,21 @@ fn handleDesktopEvent(event: ShellEvent, param1: i32, param2: i32) void {
             taskbar.updateClock(@intCast(hours), @intCast(minutes), @intCast(seconds));
         },
         .window_created => {
-            const hwnd: u64 = @intCast(@as(u32, @bitCast(param1)));
+            const hwnd = host_abi.hwndFromParams(param1, param2);
             _ = taskbar.addTaskButton(hwnd, "New Window", 0);
+            render.invalidateFull();
         },
         .window_destroyed => {
-            const hwnd: u64 = @intCast(@as(u32, @bitCast(param1)));
+            const hwnd = host_abi.hwndFromParams(param1, param2);
             _ = taskbar.removeTaskButton(hwnd);
             removeWindow(hwnd);
+            render.invalidateFull();
         },
         .window_activated => {
-            const hwnd: u64 = @intCast(@as(u32, @bitCast(param1)));
+            const hwnd = host_abi.hwndFromParams(param1, param2);
             taskbar.setActiveTask(hwnd);
             activateWindow(hwnd);
+            render.invalidateFull();
         },
         .start_menu_toggle => {
             taskbar.toggleStartMenu();

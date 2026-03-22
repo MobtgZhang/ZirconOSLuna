@@ -13,6 +13,9 @@ pub fn main() !void {
     try stdout.print("Version: {s}\n", .{luna.getVersion()});
     try stdout.print("\n", .{});
 
+    try stdout.print("[Phase 0] Render coordinator...\n", .{});
+    try stdout.print("  (Host should call render.snapshotDirty after events, render.presentComplete after blit.)\n", .{});
+
     try stdout.print("[Phase 1] Initializing Luna theme...\n", .{});
     const config = luna.ShellConfig{
         .screen_width = 1024,
@@ -21,6 +24,9 @@ pub fn main() !void {
         .color_scheme = .blue,
     };
     luna.initLunaDesktop(config);
+    try stdout.print("  Render frame seq: {d}, needs redraw: {}\n", .{ luna.render.getFrameSequence(), luna.render.needsRedraw() });
+    _ = luna.render.snapshotDirty();
+    luna.render.presentComplete();
     try stdout.print("  Theme: {s}\n", .{luna.getThemeName()});
     try stdout.print("  Resolution: {d}x{d}\n", .{ config.screen_width, config.screen_height });
     try stdout.print("\n", .{});
@@ -135,4 +141,15 @@ test "color interpolation" {
     const black = luna.RGB(0, 0, 0);
     const mid = luna.theme.interpolateColor(black, white, 1, 2);
     _ = mid;
+}
+
+test "combo box and scrollbar" {
+    var combo = luna.controls.ComboBox{};
+    try std.testing.expect(combo.addItem("One", 1));
+    try std.testing.expect(combo.addItem("Two", 2));
+    try std.testing.expectEqualStrings("One", combo.getSelectedText());
+
+    var sb = luna.controls.ScrollBar{ .height = 100, .max_value = 100, .page = 10 };
+    sb.setRange(0, 100, 10);
+    try std.testing.expect(sb.thumbLength() >= 17);
 }

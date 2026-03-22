@@ -4,6 +4,7 @@
 //! Reference: ReactOS explorer taskbar (base/shell/explorer/taskbar/)
 
 const theme = @import("theme.zig");
+const render = @import("render.zig");
 
 pub const COLORREF = theme.COLORREF;
 
@@ -359,6 +360,7 @@ pub fn updateClock(hour: u8, minute: u8, second: u8) void {
     clock.hour = hour;
     clock.minute = minute;
     clock.second = second;
+    render.invalidateRect(getClockRect());
 }
 
 pub fn getClock() *const TaskbarClock {
@@ -397,7 +399,7 @@ pub fn getTaskbarY() i32 {
     };
 }
 
-pub fn getTaskbarRect() struct { x: i32, y: i32, w: i32, h: i32 } {
+pub fn getTaskbarRect() render.Rect {
     return switch (taskbar_settings.position) {
         .bottom => .{
             .x = 0,
@@ -417,6 +419,20 @@ pub fn getTaskbarRect() struct { x: i32, y: i32, w: i32, h: i32 } {
             .w = screen_width,
             .h = taskbar_settings.height,
         },
+    };
+}
+
+/// Screen-space rectangle covering the taskbar clock (for partial redraws).
+pub fn getClockRect() render.Rect {
+    const tb = getTaskbarRect();
+    const tw = computeTrayWidth();
+    const cw: i32 = if (taskbar_settings.show_clock) theme.TASKBAR_CLOCK_WIDTH else 0;
+    const x = tb.x + tb.w - tw - cw - 4;
+    return .{
+        .x = x,
+        .y = tb.y,
+        .w = cw + 4,
+        .h = tb.h,
     };
 }
 
@@ -469,6 +485,7 @@ fn recalculateTaskLayout() void {
         btn.width = btn_width;
         pos += btn_width + 2;
     }
+    render.invalidateRect(getTaskbarRect());
 }
 
 fn computeTrayWidth() i32 {

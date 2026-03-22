@@ -406,6 +406,119 @@ pub const Tooltip = struct {
     }
 };
 
+// ── Combo Box (simplified comctl32 CBS_DROPDOWNLIST) ──
+
+pub const ComboBox = struct {
+    x: i32 = 0,
+    y: i32 = 0,
+    width: i32 = 120,
+    height: i32 = theme.TEXTBOX_HEIGHT,
+    items: [MAX_LIST_ITEMS]ListItem = [_]ListItem{.{}} ** MAX_LIST_ITEMS,
+    item_count: usize = 0,
+    selected_index: i32 = -1,
+    dropdown_open: bool = false,
+    state: ControlState = .normal,
+    is_enabled: bool = true,
+    list_max_visible: usize = 8,
+
+    pub fn addItem(self: *ComboBox, text: []const u8, data: u64) bool {
+        if (self.item_count >= MAX_LIST_ITEMS) return false;
+        var it = &self.items[self.item_count];
+        it.* = .{};
+        it.data = data;
+        const n = @min(text.len, it.text.len);
+        @memcpy(it.text[0..n], text[0..n]);
+        it.text_len = n;
+        self.item_count += 1;
+        if (self.selected_index < 0 and self.item_count > 0) {
+            self.selected_index = 0;
+        }
+        return true;
+    }
+
+    pub fn getSelectedText(self: *const ComboBox) []const u8 {
+        if (self.selected_index < 0) return &[_]u8{};
+        const i = @as(usize, @intCast(self.selected_index));
+        if (i >= self.item_count) return &[_]u8{};
+        return self.items[i].getText();
+    }
+
+    pub fn toggleDropdown(self: *ComboBox) void {
+        if (self.is_enabled) self.dropdown_open = !self.dropdown_open;
+    }
+
+    pub fn hitTest(self: *const ComboBox, mx: i32, my: i32) bool {
+        return mx >= self.x and mx < self.x + self.width and
+            my >= self.y and my < self.y + self.height;
+    }
+
+    pub fn hitTestList(self: *const ComboBox, mx: i32, my: i32) ?usize {
+        if (!self.dropdown_open) return null;
+        const list_y = self.y + self.height;
+        const row_h = theme.MENU_ITEM_HEIGHT;
+        const vis = @min(self.list_max_visible, self.item_count);
+        const list_h = @as(i32, @intCast(vis)) * row_h;
+        if (mx < self.x or mx >= self.x + self.width) return null;
+        if (my < list_y or my >= list_y + list_h) return null;
+        const row = @divTrunc(my - list_y, row_h);
+        const ri = @as(usize, @intCast(row));
+        if (ri < self.item_count) return ri;
+        return null;
+    }
+};
+
+// ── Scroll Bar (non-client / comctl32 SCC) ──
+
+pub const ScrollBar = struct {
+    x: i32 = 0,
+    y: i32 = 0,
+    width: i32 = theme.SCROLLBAR_WIDTH,
+    height: i32 = 100,
+    min_value: u32 = 0,
+    max_value: u32 = 100,
+    page: u32 = 10,
+    position: u32 = 0,
+    vertical: bool = true,
+    is_enabled: bool = true,
+
+    pub fn setRange(self: *ScrollBar, min_v: u32, max_v: u32, page_sz: u32) void {
+        self.min_value = min_v;
+        self.max_value = max_v;
+        self.page = page_sz;
+        if (self.position < self.min_value) self.position = self.min_value;
+        if (self.position > self.max_value) self.position = self.max_value;
+    }
+
+    pub fn trackLength(self: *const ScrollBar) i32 {
+        return if (self.vertical) self.height else self.width;
+    }
+
+    pub fn thumbLength(self: *const ScrollBar) i32 {
+        const tl = self.trackLength();
+        if (tl <= 0) return 0;
+        const range = self.max_value -| self.min_value;
+        if (range == 0) return tl;
+        const page = @max(self.page, 1);
+        const numer = @as(i32, @intCast(tl)) * @as(i32, @intCast(page));
+        const denom = @as(i32, @intCast(range + page));
+        return @max(17, @divTrunc(numer + denom - 1, denom));
+    }
+
+    pub fn thumbPosition(self: *const ScrollBar) i32 {
+        const tl = self.trackLength();
+        const th = self.thumbLength();
+        const range = self.max_value -| self.min_value;
+        if (range == 0 or tl <= th) return 0;
+        const pos = self.position -| self.min_value;
+        return @divTrunc(@as(i32, @intCast(pos)) * (tl - th), @as(i32, @intCast(range)));
+    }
+
+    pub fn hitTestTrack(self: *const ScrollBar, mx: i32, my: i32) bool {
+        return mx >= self.x and mx < self.x + self.width and
+            my >= self.y and my < self.y + self.height;
+    }
+};
+
 // ── Group Box ──
 
 pub const GroupBox = struct {

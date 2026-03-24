@@ -9,20 +9,27 @@ pub fn main() !void {
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
 
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    luna.initCompositor(allocator);
+    defer luna.deinitCompositor();
+
     try stdout.print("=== ZirconOS Luna Desktop ===\n", .{});
     try stdout.print("Version: {s}\n", .{luna.getVersion()});
     try stdout.print("\n", .{});
 
     try stdout.print("[Phase 0] Render coordinator...\n", .{});
-    try stdout.print("  (Host should call render.snapshotDirty after events, render.presentComplete after blit.)\n", .{});
+    try stdout.print("  (Host: snapshotDirty after events, presentComplete after blit; optional ~16ms min frame interval.)\n", .{});
 
     try stdout.print("[Phase 1] Initializing Luna theme...\n", .{});
-    const config = luna.ShellConfig{
+    var config = luna.ShellConfig{
         .screen_width = 1024,
         .screen_height = 768,
         .color_depth = 32,
         .color_scheme = .blue,
     };
+    config.setThemeRoot("src/desktop/luna");
     luna.initLunaDesktop(config);
     try stdout.print("  Render frame seq: {d}, needs redraw: {}\n", .{ luna.render.getFrameSequence(), luna.render.needsRedraw() });
     _ = luna.render.snapshotDirty();
@@ -54,6 +61,15 @@ pub fn main() !void {
     }
 
     try stdout.print("\n", .{});
+    try stdout.print("[Phase 4b] Software compositor (desktop active)...\n", .{});
+    const w: u32 = @intCast(config.screen_width);
+    const h: u32 = @intCast(config.screen_height);
+    const px = try allocator.alloc(u8, @as(usize, w) * @as(usize, h) * 4);
+    defer allocator.free(px);
+    luna.composeDesktopFrame(px, w, h);
+    try stdout.print("  First pixel RGBA: {d} {d} {d} {d}\n", .{ px[0], px[1], px[2], px[3] });
+    try stdout.print("\n", .{});
+
     try stdout.print("[Phase 5] Testing start menu...\n", .{});
     luna.handleShellEvent(.start_menu_toggle, 0, 0);
     try stdout.print("  Start menu open: {}\n", .{luna.startmenu.isOpen()});

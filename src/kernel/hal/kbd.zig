@@ -24,8 +24,11 @@ fn waitWrite() void {
 }
 
 /// 轮询一次：有按键且为通码时返回 ASCII（含 \r 表示 Enter），无则 null。
+/// 若 status 标明辅助端口数据（常见为 bit5），留给 `ps2_mouse.poll` 读取。
 pub fn pollKey() ?u8 {
-    if ((port.inb(PS2_STATUS) & 1) == 0) return null;
+    const st = port.inb(PS2_STATUS);
+    if ((st & 1) == 0) return null;
+    if ((st & 0x20) != 0) return null;
     const sc = port.inb(PS2_DATA);
     if (sc == 0xE0) {
         // 扩展键前缀：再读一字节（简化：忽略）

@@ -4,6 +4,27 @@ const std = @import("std");
 
 pub const PT_LOAD: u32 = 1;
 pub const EM_X86_64: u16 = 62;
+pub const EM_AARCH64: u16 = 183;
+pub const EM_RISCV: u16 = 243;
+/// ELF e_machine for LoongArch (LLVM / psABI).
+pub const EM_LOONGARCH: u16 = 258;
+
+pub fn peekMachine(kernel: []const u8) error{BadElf}!u16 {
+    if (kernel.len < @sizeOf(Ehdr64)) return error.BadElf;
+    const e: *align(@alignOf(Ehdr64)) const Ehdr64 = @ptrCast(@alignCast(kernel.ptr));
+    if (!isElf64(e)) return error.BadElf;
+    return e.machine;
+}
+
+pub fn machineHint(machine: u16) []const u8 {
+    return switch (machine) {
+        EM_X86_64 => "OK for BOOTX64.EFI ZBM",
+        EM_LOONGARCH => "LoongArch — need BOOTLOONGARCH64.EFI (not from Zig COFF yet)",
+        EM_AARCH64 => "AArch64 — need BOOTAA64.EFI",
+        EM_RISCV => "RISC-V — need firmware-matched RISC-V .efi",
+        else => "see ELF e_machine / psABI",
+    };
+}
 
 pub const Ehdr64 = extern struct {
     ident: [16]u8,

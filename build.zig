@@ -154,42 +154,98 @@ pub fn build(b: *std.Build) void {
     // Lastly, the Zig build system is relatively simple and self-contained,
     // and reading its source code will allow you to master it.
 
-    // --- 内核可执行（x86-64 Multiboot2）---
+    // --- 内核 + ZBM（多架构，见 docs/MULTI_ARCH_CN.md）---
     const boot_method = b.option([]const u8, "boot-method", "mbr|uefi") orelse "mbr";
-    // 默认与 build.conf / scripts/fetch-ovmf.sh（edk2-nightly RELEASE X64）一致
     const ovmf_code = b.option([]const u8, "ovmf-code", "") orelse "firmware/ovmf/RELEASEX64_OVMF_CODE.fd";
     const ovmf_vars_src = b.option([]const u8, "ovmf-vars", "") orelse "firmware/ovmf/RELEASEX64_OVMF_VARS.fd";
-    const kernel_desktop = b.option([]const u8, "kernel-desktop", "none|cmd") orelse "cmd";
-    const kernel_line = b.option([]const u8, "kernel-version-string", "") orelse "ZirconOSLuna Kernel [x86-64] CMD — NT 5.2 ref";
-    const kernel_debug_log = b.option(bool, "kernel-debug-log", "Verbose COM1 boot log (mmap/PMM/MM); false for quiet Release") orelse (optimize == .Debug);
+    const kernel_desktop = b.option([]const u8, "kernel-desktop", "none|cmd|luna") orelse "cmd";
+    const zbm_fb_width = b.option(u32, "zbm-fb-width", "UEFI GOP preferred width for ZBM") orelse 1024;
+    const zbm_fb_height = b.option(u32, "zbm-fb-height", "UEFI GOP preferred height for ZBM") orelse 768;
+    const kernel_arch_str = b.option([]const u8, "kernel-arch", "x86_64|aarch64|riscv64|loongarch64") orelse "loongarch64";
+    const KernelArch = enum { x86_64, aarch64, riscv64, loongarch64 };
+    const kernel_arch = std.meta.stringToEnum(KernelArch, kernel_arch_str) orelse {
+        std.log.err("unknown -Dkernel-arch={s}; see docs/MULTI_ARCH_CN.md", .{kernel_arch_str});
+        std.process.exit(1);
+    };
+    if (kernel_arch != .x86_64) {
+        std.debug.print(
+            \\
+            \\warning: kernel-arch={s}: zig build iso / run-kernel 仍使用 x86_64 的 BOOTX64.EFI 与 X64 OVMF；
+            \\         内核 ELF 与 ZBM 架构不一致时无法在 PC QEMU 上链式启动。本地调试请使用：
+            \\           zig build ... -Dkernel-arch=x86_64
+            \\         LoongArch 原生 UEFI 引导见 docs/LOONGARCH_UEFI_CN.md；探测 Zig 能力：bash scripts/zbm-uefi-probe.sh
+            \\
+        , .{@tagName(kernel_arch)});
+    }
 
-    const kernel_target = b.resolveTargetQuery(.{
-        .cpu_arch = .x86_64,
-        .os_tag = .freestanding,
-        .abi = .none,
+    const kernel_target = b.resolveTargetQuery(switch (kernel_arch) {
+        .x86_64 => .{ .cpu_arch = .x86_64, .os_tag = .freestanding, .abi = .none },
+        .aarch64 => .{ .cpu_arch = .aarch64, .os_tag = .freestanding, .abi = .none },
+        .riscv64 => .{ .cpu_arch = .riscv64, .os_tag = .freestanding, .abi = .none },
+        .loongarch64 => .{ .cpu_arch = .loongarch64, .os_tag = .freestanding, .abi = .none },
     });
+
+    const kernel_root = switch (kernel_arch) {
+        .x86_64 => b.path("src/kernel/entry.zig"),
+        else => b.path("src/kernel/entry_stub.zig"),
+    };
+    // 非 x86 桩在 Debug 下易触发 LLD 警告/UBSan 重定位问题；用 ReleaseSmall 保持可链接。
+    // x86_64 + Luna：顶层 Debug 时若内核也用 Debug，Zig 0.15.x 曾生成极大栈帧/erroneous 栈参槽，表现为运行中 #PF、RIP≈0xff……（像素状）。
+    // 默认内核用 ReleaseSmall；需完整内核符号/单步时加：-Dkernel-force-debug
+    const kernel_force_debug = b.option(bool, "kernel-force-debug", "x86_64: kernel 使用与 -Doptimize 相同（Debug 下 Luna 可能不稳定）") orelse false;
+    const kernel_optimize: std.builtin.OptimizeMode = switch (kernel_arch) {
+        .x86_64 => if (optimize == .Debug and !kernel_force_debug) .ReleaseSmall else optimize,
+        else => .ReleaseSmall,
+    };
     const kernel_mod = b.createModule(.{
-        .root_source_file = b.path("src/kernel/entry.zig"),
+        .root_source_file = kernel_root,
         .target = kernel_target,
-        .optimize = optimize,
+        .optimize = kernel_optimize,
         .single_threaded = true,
         .link_libc = false,
         .red_zone = false,
     });
+    const kernel_line = b.option([]const u8, "kernel-version-string", "") orelse switch (kernel_arch) {
+        .x86_64 => "ZirconOSLuna Kernel [x86-64] — NT 5.2 ref",
+        .aarch64 => "ZirconOSLuna Kernel [aarch64] stub",
+        .riscv64 => "ZirconOSLuna Kernel [riscv64] stub",
+        .loongarch64 => "ZirconOSLuna Kernel [loongarch64] stub",
+    };
+    const kernel_debug_log = b.option(bool, "kernel-debug-log", "Verbose COM1 boot log (mmap/PMM/MM); false for quiet Release") orelse (optimize == .Debug);
+
     const kernel_build_cfg = b.addOptions();
     kernel_build_cfg.addOption([]const u8, "desktop", kernel_desktop);
     kernel_build_cfg.addOption([]const u8, "kernel_line", kernel_line);
     kernel_build_cfg.addOption(bool, "kernel_debug_log", kernel_debug_log);
+    kernel_build_cfg.addOption([]const u8, "kernel_arch", @tagName(kernel_arch));
     kernel_mod.addOptions("build_config", kernel_build_cfg);
     const kernel = b.addExecutable(.{
         .name = "zirconosluna-kernel",
         .root_module = kernel_mod,
     });
-    kernel.image_base = 0x100000;
-    kernel.setLinkerScript(b.path("link/x86_64_kernel.ld"));
-    kernel.root_module.addAssemblyFile(b.path("boot/entry.S"));
-    kernel.root_module.addAssemblyFile(b.path("boot/isr_x86_64.S"));
-    kernel.root_module.addAssemblyFile(b.path("boot/idt_load.S"));
+    kernel.image_base = switch (kernel_arch) {
+        .x86_64 => 0x100000,
+        .aarch64 => 0x40000000,
+        .riscv64 => 0x80200000,
+        .loongarch64 => 0x100000,
+    };
+    kernel.setLinkerScript(switch (kernel_arch) {
+        .x86_64 => b.path("link/x86_64_kernel.ld"),
+        .aarch64 => b.path("link/aarch64_kernel.ld"),
+        .riscv64 => b.path("link/riscv64_kernel.ld"),
+        .loongarch64 => b.path("link/loongarch64_kernel.ld"),
+    });
+    switch (kernel_arch) {
+        .x86_64 => {
+            kernel.root_module.addAssemblyFile(b.path("boot/entry.S"));
+            kernel.root_module.addAssemblyFile(b.path("boot/isr_x86_64.S"));
+            kernel.root_module.addAssemblyFile(b.path("boot/idt_load.S"));
+            kernel.root_module.addAssemblyFile(b.path("boot/kernel_image_end.S"));
+        },
+        .aarch64 => kernel.root_module.addAssemblyFile(b.path("boot/stub/aarch64_start.S")),
+        .riscv64 => kernel.root_module.addAssemblyFile(b.path("boot/stub/riscv64_start.S")),
+        .loongarch64 => kernel.root_module.addAssemblyFile(b.path("boot/stub/loongarch64_start.S")),
+    }
     b.installArtifact(kernel);
 
     const zbm_target = b.resolveTargetQuery(.{
@@ -202,6 +258,10 @@ pub fn build(b: *std.Build) void {
         .target = zbm_target,
         .optimize = optimize,
     });
+    const zbm_opts = b.addOptions();
+    zbm_opts.addOption(u32, "fb_width", zbm_fb_width);
+    zbm_opts.addOption(u32, "fb_height", zbm_fb_height);
+    zbm_mod.addOptions("zbm_config", zbm_opts);
     const zbm = b.addExecutable(.{
         .name = "BOOTX64",
         .root_module = zbm_mod,
@@ -209,13 +269,36 @@ pub fn build(b: *std.Build) void {
     zbm.root_module.addAssemblyFile(b.path("boot/zbm/trampoline.S"));
     b.installArtifact(zbm);
 
-    const kernel_step = b.step("kernel", "Build x86-64 kernel (Multiboot2)");
+    const zbm_aa64_stub_opts = b.addOptions();
+    zbm_aa64_stub_opts.addOption([]const u8, "banner_line1", "ZirconOS ZBM [aarch64 UEFI stub]");
+    zbm_aa64_stub_opts.addOption([]const u8, "banner_line2", "Full menu + Multiboot2 only on BOOTX64.EFI (x86-64 PC firmware).");
+    zbm_aa64_stub_opts.addOption([]const u8, "banner_line3", "LoongArch/riscv64 UEFI COFF: not in Zig yet — see docs/LOONGARCH_UEFI_CN.md");
+    const zbm_aa64_mod = b.createModule(.{
+        .root_source_file = b.path("boot/zbm/stub_main.zig"),
+        .target = b.resolveTargetQuery(.{ .cpu_arch = .aarch64, .os_tag = .uefi, .abi = .msvc }),
+        .optimize = optimize,
+    });
+    zbm_aa64_mod.addOptions("zbm_stub_config", zbm_aa64_stub_opts);
+    const zbm_aa64 = b.addExecutable(.{
+        .name = "BOOTAA64",
+        .root_module = zbm_aa64_mod,
+    });
+    b.installArtifact(zbm_aa64);
+
+    const kernel_step = b.step("kernel", "Build freestanding kernel (-Dkernel-arch=…)");
     kernel_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
+
+    const zbm_aa64_step = b.step("zbm-aarch64", "Build UEFI BOOTAA64.EFI (aarch64 stub; riscv/loong UEFI 见文档)");
+    zbm_aa64_step.dependOn(&b.addInstallArtifact(zbm_aa64, .{}).step);
+
+    const zbm_uefi_probe = b.addSystemCommand(&.{ "bash", "scripts/zbm-uefi-probe.sh" });
+    const zbm_uefi_probe_step = b.step("zbm-uefi-probe", "Print which UEFI triples Zig can link (COFF)");
+    zbm_uefi_probe_step.dependOn(&zbm_uefi_probe.step);
 
     const kernel_bin_path = b.pathJoin(&.{ b.install_path, "bin", "zirconosluna-kernel" });
     const zbm_bin_path = b.pathJoin(&.{ b.install_path, "bin", "BOOTX64.efi" });
     const iso_path = b.pathJoin(&.{ b.install_path, "zirconosluna.iso" });
-    const mk_iso = b.addSystemCommand(&.{ "bash", "scripts/mk-iso.sh", zbm_bin_path, kernel_bin_path, iso_path });
+    const mk_iso = b.addSystemCommand(&.{ "bash", "scripts/mk-iso.sh", zbm_bin_path, iso_path, kernel_bin_path });
     mk_iso.step.dependOn(b.getInstallStep());
     const iso_step = b.step("iso", "Build UEFI ISO (ZirconOS Boot Manager + kernel)");
     iso_step.dependOn(&mk_iso.step);

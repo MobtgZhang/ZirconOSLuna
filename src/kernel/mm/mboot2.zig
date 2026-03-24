@@ -36,8 +36,64 @@ pub const TagHeader = extern struct {
     size: u32 align(1),
 };
 
+/// Multiboot2 framebuffer tag（type 8，RGB 直彩）解析结果。
+pub const FbInfo = struct {
+    addr: u64,
+    pitch: u32,
+    width: u32,
+    height: u32,
+    bpp: u8,
+    fb_type: u8,
+
+    pub fn mapBytes(self: FbInfo) u64 {
+        return @as(u64, self.pitch) *% @as(u64, self.height);
+    }
+};
+
 fn align8(x: u32) u32 {
     return (x + 7) & ~@as(u32, 7);
+}
+
+fn readU32(p: usize) u32 {
+    const b: *align(1) const [4]u8 = @ptrFromInt(p);
+    return @as(u32, b[0]) | (@as(u32, b[1]) << 8) | (@as(u32, b[2]) << 16) | (@as(u32, b[3]) << 24);
+}
+
+fn readU64(p: usize) u64 {
+    const lo = readU32(p);
+    const hi = readU32(p + 4);
+    return @as(u64, lo) | (@as(u64, hi) << 32);
+}
+
+/// 遍历 Multiboot2 信息块，返回第一个 framebuffer tag；无则 null。
+pub fn findFramebuffer(info_phys: usize) ?FbInfo {
+    const hdr: *align(1) const extern struct {
+        total_size: u32,
+        reserved: u32,
+    } = @ptrFromInt(info_phys);
+
+    var off: u32 = 8;
+    while (off + @sizeOf(TagHeader) <= hdr.total_size) {
+        const tag: *align(1) const TagHeader = @ptrFromInt(info_phys + off);
+        if (tag.typ == @intFromEnum(TagType.end)) break;
+
+        const step = align8(tag.size);
+        if (step == 0) break;
+
+        if (tag.typ == @intFromEnum(TagType.framebuffer) and tag.size >= 42) {
+            const base = info_phys + off + 12;
+            return FbInfo{
+                .addr = readU64(base),
+                .pitch = readU32(base + 8),
+                .width = readU32(base + 12),
+                .height = readU32(base + 16),
+                .bpp = @as(*align(1) const u8, @ptrFromInt(base + 20)).*,
+                .fb_type = @as(*align(1) const u8, @ptrFromInt(base + 21)).*,
+            };
+        }
+        off += step;
+    }
+    return null;
 }
 
 /// 校验 magic 并打印引导器名称、基本内存与 mmap 摘要。
@@ -85,6 +141,20 @@ pub fn dumpInfo(magic: u32, info_phys: usize) void {
                     dbg.print(" KB mem_upper=");
                     dbg.printU64Dec(p.mem_upper);
                     dbg.println(" KB");
+                }
+            },
+            @intFromEnum(TagType.framebuffer) => {
+                if (tag.size >= 28 and dbg.verbose) {
+                    const base = info_phys + off + 12;
+                    dbg.print("[MBOOT2] framebuffer: addr=0x");
+                    dbg.printHex(readU64(base), 16);
+                    dbg.print(" pitch=");
+                    dbg.printU64Dec(readU32(base + 8));
+                    dbg.print(" ");
+                    dbg.printU64Dec(readU32(base + 12));
+                    dbg.print("x");
+                    dbg.printU64Dec(readU32(base + 16));
+                    dbg.println("");
                 }
             },
             @intFromEnum(TagType.mmap) => {

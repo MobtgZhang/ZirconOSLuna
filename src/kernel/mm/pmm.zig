@@ -13,10 +13,14 @@ var pool_next: u64 = 0;
 var pool_limit: u64 = 0;
 var inited: bool = false;
 
-/// 内核与引导页表占用的物理地址上界（保守值）。
-/// `boot/entry.S` 恒等映射首 2MiB；在此之下含 1MiB 加载基址、早期页表与 BSS/栈。
+/// 内核映像末尾标记（`boot/kernel_image_end.S`，位于 `.bss` 之后）；PMM 从其后一页边界起 bump。
+/// 勿再用固定 2MiB：大内核可延伸到十余 MiB，曾从 2MiB 起分配踩 `.text` 致随机取指 #PF。
+extern const kernel_image_end: u8;
+
+/// `boot/entry.S` 用 512×2MiB 大页恒等映射低 1GiB；PMM 页表页须落在此范围内以便 `clearPage` 等访问。
+/// 注意：帧缓冲若在 1GiB 以上物理地址，须走 `fb_map` 高半部映射；双缓冲后景在高半部帧缓冲场景下亦须 `mapFramebufferBackBuffer`，勿仅用裸物理指针写后景。
 fn kernelReservedTopPhys() u64 {
-    return 2 * 1024 * 1024;
+    return alignUp(@intFromPtr(&kernel_image_end) +% 1, 4096);
 }
 
 fn alignUp(v: u64, alignment: u64) u64 {
@@ -48,7 +52,7 @@ pub fn initLinearFallback() void {
     pool_next = alignUp(base, 4096);
     pool_limit = pool_next + size;
     inited = true;
-    dbg.println("[PMM] linear fallback on (2MiB..+16MiB)");
+    dbg.println("[PMM] linear fallback on ([kernel_end]..+16MiB)");
 }
 
 fn findPool(info_phys: usize, min_addr: u64, need: u64) ?PoolRegion {
@@ -95,7 +99,7 @@ fn findPool(info_phys: usize, min_addr: u64, need: u64) ?PoolRegion {
     return best;
 }
 
-/// 分配一页（4KiB）。成功返回物理地址；失败或池未初始化返回 **0**（与页 0 区分：本池自 2MiB 起）。
+/// 分配一页（4KiB）。成功返回物理地址；失败或池未初始化返回 **0**（与页 0 区分：池自 `kernel_image_end` 对齐后起）。
 pub fn tryAllocPage() u64 {
     if (!inited) return 0;
     const p = pool_next;
@@ -107,4 +111,15 @@ pub fn tryAllocPage() u64 {
 pub fn poolRemainingBytes() u64 {
     if (!inited or pool_next >= pool_limit) return 0;
     return pool_limit - pool_next;
+}
+
+/// 自页池 bump 一段**物理连续**内存（向上取整到 4KiB）。用于帧缓冲后景等。
+/// 失败返回 `null`（池未初始化或空间不足）。
+pub fn tryAllocContiguousBytes(bytes: u64) ?u64 {
+    if (!inited or bytes == 0) return null;
+    const need = (bytes + 4095) & ~@as(u64, 4095);
+    if (pool_next + need > pool_limit) return null;
+    const base = pool_next;
+    pool_next += need;
+    return base;
 }

@@ -5,6 +5,31 @@ const dbg = @import("dbg.zig");
 const mboot2 = @import("mm/mboot2.zig");
 const pmm = @import("mm/pmm.zig");
 const idt = @import("arch/idt.zig");
+
+/// UEFI 路径下 ZBM 把 Multiboot2 信息块放在低端固定物理页（如 `0x50000`）。
+/// ExitBootServices 之后规范上 `EfiLoaderData` 仍归本映像使用，但为防实机/固件差异或后续误踩，
+/// 在解析 mmap/帧缓冲前先整体拷入 BSS，后续只访问副本。
+var mb2_info_copy: [65536]u8 align(8) = undefined;
+
+fn snapshotMultibootInfo(info_phys: usize) usize {
+    const hdr: *align(1) const extern struct {
+        total_size: u32,
+        reserved: u32,
+    } = @ptrFromInt(info_phys);
+    const n = hdr.total_size;
+    if (n < 8 or n > mb2_info_copy.len) {
+        if (n > mb2_info_copy.len) {
+            serial.writeStrLn("[MBOOT2] info total_size too large; using phys (increase mb2_info_copy)");
+        }
+        return info_phys;
+    }
+    const src: [*]const u8 = @ptrFromInt(info_phys);
+    @memcpy(mb2_info_copy[0..n], src[0..n]);
+    return @intFromPtr(&mb2_info_copy);
+}
+
+/// Phase0 解析到的 Multiboot2 帧缓冲信息（无 tag 时为 null）。
+pub var framebuffer: ?mboot2.FbInfo = null;
 // 链入异常分发（ISR 调用 `exceptionDispatch`）。
 comptime {
     _ = @import("ke/trap.zig");
@@ -38,10 +63,12 @@ pub fn phase0Multiboot(magic: u32, info_phys: usize) void {
         hang();
     }
 
-    mboot2.dumpInfo(magic, info_phys);
+    const info_use = snapshotMultibootInfo(info_phys);
+    mboot2.dumpInfo(magic, info_use);
+    framebuffer = mboot2.findFramebuffer(info_use);
 
     const reserve_bytes: u64 = 16 * 1024 * 1024;
-    if (!pmm.initFromMultiboot(info_phys, reserve_bytes)) {
+    if (!pmm.initFromMultiboot(info_use, reserve_bytes)) {
         pmm.initLinearFallback();
     }
 

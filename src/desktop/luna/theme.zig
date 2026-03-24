@@ -4,6 +4,14 @@
 
 pub const COLORREF = u32;
 
+/// XP 典型逻辑 DPI；高 DPI 宿主可写 `current_dpi` 后配合 `dpiScale()` 缩放度量。
+pub const REFERENCE_DPI: u32 = 96;
+pub var current_dpi: u32 = 96;
+
+pub fn dpiScale() f32 {
+    return @as(f32, @floatFromInt(current_dpi)) / @as(f32, @floatFromInt(REFERENCE_DPI));
+}
+
 pub fn RGB(r: u8, g: u8, b: u8) COLORREF {
     return @as(u32, r) | (@as(u32, g) << 8) | (@as(u32, b) << 16);
 }
@@ -64,6 +72,7 @@ pub const ThemeColors = struct {
     clock_text: COLORREF,
 };
 
+/// XP Luna 蓝/银/橄榄色板以此 `ThemeColors` 为 **单一来源**；`resources.zig` 仅路径，不重复定义 COLORREF。
 pub const LUNA_BLUE = ThemeColors{
     .taskbar_top = RGB(0x00, 0x54, 0xE3),
     .taskbar_bottom = RGB(0x01, 0x50, 0xD0),

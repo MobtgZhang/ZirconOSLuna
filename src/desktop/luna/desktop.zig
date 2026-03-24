@@ -242,6 +242,20 @@ pub fn rearrangeIcons() void {
     }
 }
 
+/// 将可见图标像素坐标吸附到间距网格（`DesktopSettings.align_to_grid`）。
+pub fn snapIconsToGrid() void {
+    if (!settings.align_to_grid) return;
+    const sx = settings.icon_spacing_x;
+    const sy = settings.icon_spacing_y;
+    if (sx <= 0 or sy <= 0) return;
+    for (icons[0..icon_count]) |*icon| {
+        if (!icon.is_visible) continue;
+        icon.pixel_x = @divTrunc(icon.pixel_x + sx / 2, sx) * sx;
+        icon.pixel_y = @divTrunc(icon.pixel_y + sy / 2, sy) * sy;
+    }
+    render.invalidateLayer(.desktop);
+}
+
 // ── Wallpaper ──
 
 pub fn setWallpaper(path: []const u8, style: WallpaperStyle) void {
@@ -314,6 +328,31 @@ fn addContextItem(label: []const u8, item_type: ContextMenuItemType, cmd_id: u32
 
 pub fn getSettings() *const DesktopSettings {
     return &settings;
+}
+
+const context_menu_popup_w: i32 = 180;
+
+pub fn hitTestContextMenuItem(mx: i32, my: i32) ?u32 {
+    if (!context_menu.is_visible) return null;
+    var y: i32 = context_menu.y;
+    const x0 = context_menu.x;
+    for (context_menu.items[0..context_menu.item_count]) |it| {
+        if (it.item_type == .separator) {
+            y += 4;
+            continue;
+        }
+        if (it.item_type == .disabled) {
+            y += theme.MENU_ITEM_HEIGHT;
+            continue;
+        }
+        const h: i32 = theme.MENU_ITEM_HEIGHT;
+        if (mx >= x0 and mx < x0 + context_menu_popup_w and my >= y and my < y + h) {
+            if (it.command_id == 0) return null;
+            return it.command_id;
+        }
+        y += h;
+    }
+    return null;
 }
 
 /// Path to packaged PNG for a standard shell icon (host image loader).

@@ -1,62 +1,57 @@
 # ZirconOSLuna 资源清单
 
+授权与机器可读条目见同目录 [`manifest.json`](manifest.json)。以下为人类可读摘要；**全部 PNG 由 `scripts/gen_luna_resources.py` 生成（CC0-1.0），非 Windows/ReactOS 衍生资产**。
+
 ## 壁纸 (wallpapers/)
 
 | 文件名 | 主题 | 说明 |
-|-------|------|------|
-| bliss_default.png | Blue | 默认 Bliss 蓝天绿地壁纸 |
-| wallpaper_olive_green.png | Olive Green | 秋季田园壁纸 |
-| wallpaper_silver.png | Silver | 银灰山水壁纸 |
+|--------|------|------|
+| bliss_default.png | Blue | 深蓝抽象渐变 + 青色极光带（非实景丘陵） |
+| wallpaper_olive_green.png | Olive Green | 橄榄绿基调 + 月金色光晕 |
+| wallpaper_silver.png | Silver | 银灰渐变 + 冷色线条 |
 
 ## 系统图标 (icons/system/)
 
-| 文件名 | 说明 | 用途 |
-|-------|------|------|
-| icon_mycomputer.png | 我的电脑 | 桌面图标 |
-| icon_mydocuments.png | 我的文档 | 桌面图标 |
-| icon_recyclebin_empty.png | 回收站（空） | 桌面图标 |
-| icon_recyclebin_full.png | 回收站（满） | 桌面图标 |
-| icon_network.png | 网上邻居 | 桌面图标 |
-| icon_controlpanel.png | 控制面板 | 开始菜单右栏 |
-| icon_printer.png | 打印机和传真 | 开始菜单右栏 |
-| icon_help.png | 帮助和支持 | 开始菜单右栏 |
-| icon_search.png | 搜索 | 开始菜单 |
-| icon_run.png | 运行 | 开始菜单 |
-| icon_shutdown.png | 关机 | 开始菜单/登录界面 |
-| icon_logoff.png | 注销 | 开始菜单 |
-| icon_user_default.png | 默认用户头像 | 开始菜单/登录界面 |
+| 文件名 | 说明 |
+|--------|------|
+| icon_mycomputer.png | 本机（锆石 + 总线线） |
+| icon_mydocuments.png | 文档（折页 + 月牙） |
+| icon_recyclebin_empty.png | 回收站空（晶框） |
+| icon_recyclebin_full.png | 回收站满（晶块） |
+| icon_network.png | 网络（节点拓扑） |
+| icon_controlpanel.png | 控制面板（四象限滑块） |
+| icon_printer.png | 打印机 |
+| icon_help.png | 帮助（书页 + 星） |
+| icon_search.png | 搜索 |
+| icon_run.png | 运行 |
+| icon_shutdown.png | 关机 |
+| icon_logoff.png | 注销 |
+| icon_user_default.png | 默认用户 |
 
-## 开始菜单图标 (icons/startmenu/)
+## 开始菜单 / 快速启动 (icons/startmenu/、icons/quicklaunch/)
 
 | 文件名 | 说明 |
-|-------|------|
-| icon_internet.png | Internet 浏览器 |
-| icon_email.png | 电子邮件 |
+|--------|------|
+| icon_internet.png | 浏览器（窗格 + 轨道弧） |
+| icon_email.png | 邮件（信封 + 月牙） |
 
-## 快速启动图标 (icons/quicklaunch/)
-
-| 文件名 | 说明 |
-|-------|------|
-| icon_internet.png | Internet 浏览器 |
-| icon_email.png | 电子邮件 |
-
-## 系统托盘图标 (icons/tray/)
+## 系统托盘 (icons/tray/)
 
 | 文件名 | 说明 |
-|-------|------|
-| icon_tray_volume.png | 音量控制 |
-| icon_tray_network.png | 网络连接状态 |
+|--------|------|
+| icon_tray_volume.png | 音量 |
+| icon_tray_network.png | 网络 |
 
-## UI 组件 (ui/)
+## UI 组件
 
-| 文件名 | 说明 |
-|-------|------|
-| taskbar/ui_start_button.png | 开始按钮 |
-| titlebar/ui_titlebar_buttons.png | 窗口控制按钮组 |
+| 路径 | 说明 |
+|------|------|
+| taskbar/ui_start_button.png | 开始按钮贴片（108×30） |
+| titlebar/ui_titlebar_buttons.png | 标题栏按钮条：最小化、最大化、关闭（63×21） |
 
 ## 鼠标光标 (cursors/)
 
-| 文件名 | 说明 |
-|-------|------|
-| cursor_arrow.png | 标准箭头光标 |
-| cursor_wait.png | 等待沙漏光标 |
+| 文件名 | 热点 (x,y) | 说明 |
+|--------|------------|------|
+| cursor_arrow.png | (1,1) | 箭头 |
+| cursor_wait.png | (16,16) | 等待（旋转楔 + 锆石心） |

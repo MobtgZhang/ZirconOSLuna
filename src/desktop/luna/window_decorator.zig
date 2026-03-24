@@ -4,6 +4,7 @@
 //! Reference: ReactOS uxtheme/themes (dll/win32/uxtheme/)
 
 const theme = @import("theme.zig");
+const surface_mod = @import("surface.zig");
 
 pub const COLORREF = theme.COLORREF;
 
@@ -302,6 +303,39 @@ fn makeSysMenuItem(label: []const u8, cmd: TitleButton, enabled: bool, is_defaul
     @memcpy(item.label[0..n], label[0..n]);
     item.label_len = n;
     return item;
+}
+
+/// 将非客户区绘制到 RGBA 表面（软件合成用；无 DWM）。
+pub fn drawChromeToSurface(s: *surface_mod.RgbaSurface, chrome: *const WindowChrome) void {
+    const x = chrome.window_x;
+    const y = chrome.window_y;
+    const w = chrome.window_width;
+    const h = chrome.window_height;
+    if (w <= 0 or h <= 0) return;
+
+    const border = theme.WINDOW_BORDER_WIDTH;
+    const tb_h = theme.TITLEBAR_HEIGHT;
+    const cols = getTitleBarColors(chrome.is_active);
+    const bcol = getBorderColor(chrome.is_active);
+
+    s.fillRectColorRef(x, y, w, h, bcol, 255);
+    s.fillRectColorRef(x + border, y + border, w - 2 * border, h - 2 * border, theme.getColors().window_background, 255);
+    s.fillRectGradientV(x + border, y + border, w - 2 * border, tb_h, cols.left, cols.right);
+
+    const tx = x + border + theme.TITLEBAR_TEXT_OFFSET_X;
+    const ty = y + border + theme.TITLEBAR_TEXT_OFFSET_Y;
+    s.drawText8(tx, ty, chrome.getTitle(), cols.text);
+
+    const close_c = getCloseButtonColor(chrome.close_btn.state);
+    s.fillRectColorRef(chrome.close_btn.x, chrome.close_btn.y, chrome.close_btn.width, chrome.close_btn.height, close_c, 240);
+    if (chrome.has_minimize) {
+        const mc = getMinMaxButtonColor(chrome.minimize_btn.state, chrome.is_active);
+        s.fillRectColorRef(chrome.minimize_btn.x, chrome.minimize_btn.y, chrome.minimize_btn.width, chrome.minimize_btn.height, mc, 220);
+    }
+    if (chrome.has_maximize) {
+        const mc = getMinMaxButtonColor(chrome.maximize_btn.state, chrome.is_active);
+        s.fillRectColorRef(chrome.maximize_btn.x, chrome.maximize_btn.y, chrome.maximize_btn.width, chrome.maximize_btn.height, mc, 220);
+    }
 }
 
 // ── Initialization ──

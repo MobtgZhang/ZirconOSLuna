@@ -519,6 +519,25 @@ pub const ScrollBar = struct {
     }
 };
 
+// ── Static label（属性页标题等）──
+
+pub const Label = struct {
+    x: i32 = 0,
+    y: i32 = 0,
+    text: [MAX_LABEL_LEN]u8 = [_]u8{0} ** MAX_LABEL_LEN,
+    text_len: usize = 0,
+
+    pub fn setText(self: *Label, s: []const u8) void {
+        const n = @min(s.len, MAX_LABEL_LEN);
+        @memcpy(self.text[0..n], s[0..n]);
+        self.text_len = n;
+    }
+
+    pub fn getText(self: *const Label) []const u8 {
+        return self.text[0..self.text_len];
+    }
+};
+
 // ── Group Box ──
 
 pub const GroupBox = struct {

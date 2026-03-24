@@ -261,6 +261,15 @@ pub fn setActiveTask(hwnd: u64) void {
     }
 }
 
+pub fn setTaskButtonMinimized(hwnd: u64, minimized: bool) void {
+    for (task_buttons[0..task_count]) |*btn| {
+        if (btn.hwnd == hwnd and btn.is_visible) {
+            btn.state = if (minimized) .minimized else .normal;
+            return;
+        }
+    }
+}
+
 pub fn flashTask(hwnd: u64) void {
     for (task_buttons[0..task_count]) |*btn| {
         if (btn.hwnd == hwnd and btn.state != .active) {
@@ -285,6 +294,82 @@ pub fn getTaskCount() usize {
     return count;
 }
 
+pub fn hitTestQuickLaunch(mx: i32, my: i32) ?usize {
+    const tb_y = getTaskbarY();
+    if (my < tb_y or my >= tb_y + taskbar_settings.height) return null;
+    if (!taskbar_settings.show_quick_launch) return null;
+    var seen: usize = 0;
+    for (quick_launch[0..quick_launch_count]) |*item| {
+        if (!item.is_visible) continue;
+        if (mx >= item.x and mx < item.x + 20) {
+            return seen;
+        }
+        seen += 1;
+    }
+    return null;
+}
+
+pub fn getQuickLaunchPath(ordinal: usize) ?[]const u8 {
+    var seen: usize = 0;
+    for (quick_launch[0..quick_launch_count]) |*item| {
+        if (!item.is_visible) continue;
+        if (seen == ordinal) {
+            return item.target_path[0..item.target_path_len];
+        }
+        seen += 1;
+    }
+    return null;
+}
+
+pub fn getQuickLaunchCellX(ordinal: usize) ?i32 {
+    var seen: usize = 0;
+    for (quick_launch[0..quick_launch_count]) |*item| {
+        if (!item.is_visible) continue;
+        if (seen == ordinal) return item.x;
+        seen += 1;
+    }
+    return null;
+}
+
+pub fn hitTestTrayIcon(mx: i32, my: i32) ?usize {
+    const tb = getTaskbarRect();
+    if (my < tb.y or my >= tb.y + tb.h) return null;
+    const tw = computeTrayWidth();
+    const cw: i32 = if (taskbar_settings.show_clock) theme.TASKBAR_CLOCK_WIDTH else 0;
+    const x0 = tb.x + tb.w - tw - cw - 4;
+    if (mx < x0 + 4 or mx >= x0 + tw - 4) return null;
+    const rel = mx - (x0 + 4);
+    const cell: i32 = @divFloor(rel, 20);
+    var seen: i32 = 0;
+    var i: usize = 0;
+    while (i < tray_icon_count) : (i += 1) {
+        const icon = &tray_icons[i];
+        if (!icon.is_visible) continue;
+        if (seen == cell) return i;
+        seen += 1;
+    }
+    return null;
+}
+
+pub fn hitTestTaskHwnd(mx: i32, my: i32) ?u64 {
+    if (hitTestTask(mx, my)) |i| {
+        return task_buttons[i].hwnd;
+    }
+    return null;
+}
+
+pub fn setTaskButtonTitle(hwnd: u64, name: []const u8) void {
+    for (task_buttons[0..task_count]) |*btn| {
+        if (btn.hwnd == hwnd and btn.is_visible) {
+            const n = @min(name.len, MAX_TASK_NAME_LEN);
+            @memcpy(btn.name[0..n], name[0..n]);
+            btn.name_len = n;
+            recalculateTaskLayout();
+            return;
+        }
+    }
+}
+
 pub fn hitTestTask(x: i32, y: i32) ?usize {
     const tb_y = getTaskbarY();
     if (y < tb_y or y >= tb_y + taskbar_settings.height) return null;
@@ -297,6 +382,11 @@ pub fn hitTestTask(x: i32, y: i32) ?usize {
 }
 
 // ── Quick Launch ──
+
+pub fn clearQuickLaunch() void {
+    quick_launch_count = 0;
+    for (&quick_launch) |*q| q.* = .{};
+}
 
 pub fn addQuickLaunchItem(name: []const u8, target: []const u8, icon_id: u32) void {
     if (quick_launch_count >= MAX_QUICK_LAUNCH) return;
@@ -352,6 +442,18 @@ pub fn getTrayIconCount() usize {
         if (icon.is_visible) count += 1;
     }
     return count;
+}
+
+/// Fills `out` with visible tray `icon_id` in left-to-right order; returns count.
+pub fn trayPaintEnumerate(out: []u32) usize {
+    var n: usize = 0;
+    for (tray_icons[0..tray_icon_count]) |*icon| {
+        if (!icon.is_visible) continue;
+        if (n >= out.len) break;
+        out[n] = icon.icon_id;
+        n += 1;
+    }
+    return n;
 }
 
 // ── Clock ──
@@ -451,6 +553,10 @@ pub fn getTaskbarColors() struct {
     };
 }
 
+pub fn relayout() void {
+    recalculateTaskLayout();
+}
+
 fn recalculateTaskLayout() void {
     const start_end = theme.START_BTN_WIDTH + 6;
     var ql_width: i32 = 0;
@@ -485,10 +591,17 @@ fn recalculateTaskLayout() void {
         btn.width = btn_width;
         pos += btn_width + 2;
     }
+
+    var ql_x: i32 = start_end + 4;
+    for (quick_launch[0..quick_launch_count]) |*item| {
+        if (!item.is_visible) continue;
+        item.x = ql_x;
+        ql_x += 22;
+    }
     render.invalidateRect(getTaskbarRect());
 }
 
-fn computeTrayWidth() i32 {
+pub fn computeTrayWidth() i32 {
     var count: i32 = 0;
     for (tray_icons[0..tray_icon_count]) |*icon| {
         if (icon.is_visible) count += 1;
@@ -523,10 +636,6 @@ pub fn init() void {
         .width = theme.START_BTN_WIDTH,
         .height = theme.START_BTN_HEIGHT,
     };
-
-    addQuickLaunchItem("Show Desktop", "shell:desktop", 1);
-    addQuickLaunchItem("Internet Explorer", "C:\\Program Files\\Internet Explorer\\iexplore.exe", 2);
-    addQuickLaunchItem("Windows Media Player", "C:\\Program Files\\Windows Media Player\\wmplayer.exe", 3);
 
     _ = addTrayIcon(1, 0, 10, "Volume");
     _ = addTrayIcon(2, 0, 11, "Network");

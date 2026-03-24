@@ -1,6 +1,9 @@
 //! Render coordinator — dirty regions, frame sequencing, and layer hints for the
 //! host framebuffer / GDI bridge. Single place to merge invalidation from desktop,
 //! taskbar, shell windows, and overlays (double-buffer friendly).
+//!
+//! **帧率**：宿主应在事件循环中于 `presentComplete` 之间加入最小间隔（例如 16ms）以限制 CPU；
+//! 本模块不依赖 OS 定时器，由调用方（如 SDL/Win32 主循环）实现。
 
 const std = @import("std");
 
@@ -113,6 +116,21 @@ pub fn invalidateRect(r: Rect) void {
 
 pub fn invalidateDesktopArea() void {
     invalidateRect(.{ .x = 0, .y = 0, .w = screen_w, .h = screen_h });
+}
+
+/// 按合成层失效近似矩形（与 [compositor.zig](compositor.zig) `layer_order` 一致）。
+pub fn invalidateLayer(layer: RenderLayer) void {
+    const tb_h: i32 = @import("theme.zig").TASKBAR_HEIGHT;
+    switch (layer) {
+        .desktop => invalidateRect(.{ .x = 0, .y = 0, .w = screen_w, .h = screen_h - tb_h }),
+        .taskbar => invalidateRect(.{ .x = 0, .y = screen_h - tb_h, .w = screen_w, .h = tb_h }),
+        .shell_window => invalidateDesktopArea(),
+        .overlay => invalidateDesktopArea(),
+        .cursor => {
+            // 光标层：小矩形占位，实际宿主可传鼠标坐标扩展
+            invalidateRect(.{ .x = 0, .y = 0, .w = screen_w, .h = screen_h });
+        },
+    }
 }
 
 pub fn needsRedraw() bool {

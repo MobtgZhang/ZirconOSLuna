@@ -1,6 +1,7 @@
 //! Default resource paths for Luna assets (wallpapers, icons).
 //! 路径相对于 **本主题包根目录** `src/desktop/luna/`，
 //! 宿主加载时应将 `resources/...` 解析到该目录下。
+//! PNG 由 `scripts/gen_luna_resources.py` 生成；授权与条目见 `resources/manifest.json`。
 
 const theme = @import("theme.zig");
 

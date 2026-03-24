@@ -73,22 +73,30 @@ flowchart TB
 ### 本仓库的「引导」落点（与真实 XP x64 区分）
 
 真实 Windows XP x64 使用 **NTLDR 系**引导链加载 **64 位内核**（见 [NT52_KERNEL_ARCH_CN.md](NT52_KERNEL_ARCH_CN.md) §6.4）。本仓库另提供 **Multiboot2** 实验内核（`boot/entry.S`、`src/kernel/entry.zig`），用于在 QEMU 等环境中验证 **x86-64 内核入口与工程习惯**，**不**等价于复刻 NTLDR/安装程序。  
-引导阶段用 **2MiB 大页** 做 **低 512MiB 恒等映射**，以便 GRUB 按 ELF 将 `.text/.bss` 放到十余 MiB 物理地址时仍可执行（详见 [REPOSITORY_LAYOUT_CN.md](REPOSITORY_LAYOUT_CN.md) 内核表）。
+引导阶段用 **2MiB 大页** 做 **低 1GiB 恒等映射**，以便 GRUB 按 ELF 将 `.text/.bss` 放到十余 MiB 物理地址时仍可执行（详见 [REPOSITORY_LAYOUT_CN.md](REPOSITORY_LAYOUT_CN.md) 内核表）。高于 1GiB 的帧缓冲由内核 **fb_map** 映射到固定高半部虚拟地址。
 
 ## 本仓库（ZirconOSLuna）落点
 
 | 层 | 本仓库是否实现 | 说明 |
 |----|----------------|------|
-| 引导 / arch 启动 | **实验内核** | `boot/entry.S` + Multiboot2；**非** NTLDR/Bootmgr |
+| 引导 / arch 启动 | **实验内核** | UEFI 上为 **ZBM** 载入 ELF 并构造 Multiboot2（含可选 **GOP framebuffer tag**）；`boot/entry.S` 进入长模式；**非** NTLDR/Bootmgr，**非**微软 `ntoskrnl` |
 | **arch/x86_64** | **常量** | `paging.zig` 4 级页表 |
 | HAL | **类型与常量** | 见 `src/hal/framebuffer.zig`（面向宿主帧缓冲的契约，非内核 HAL） |
 | 驱动 | **仅视频呈现侧接口** | 见 `src/drivers/video/display_manager.zig`（与脏区/合成对接，非 KMD） |
 | **KE/MM/OB/PS/SE/IO/LPC** | **类型与常量** | `ke/`、`mm/`、`ob/`、`ps/`、`se/`、`io/`、`lpc/` 规范类型 |
 | **Loader** | **常量** | `loader/pe.zig` PE 魔数 |
 | user32/gdi32 | **否（完整实现）** | 提供 Shell 状态机、主题与 **宿主应实现的绘制/消息契约** |
-| Shell/Luna 视觉与逻辑 | **是** | `src/desktop/luna/` |
+| Shell/Luna 视觉与逻辑 | **是** | `src/desktop/luna/`（宿主）；内核态 **`KERNEL_DESKTOP=luna`** 为 **freestanding 极简 Luna 色合成**（帧缓冲 + 内置字体），与完整 Win32 栈无关 |
 
 结论：**“内核架构说明”** 在本文与 `docs/REPOSITORY_LAYOUT_CN.md`；**代码** 中在 `src/hal`、`src/drivers/video` 提供与 **显示管线** 相关的可编译接口，其余内核同名目录为 **架构对齐用占位与说明**，避免误以为本仓库已实现内核。
+
+### 构建选项：宿主桌面 ≠ 内核桌面
+
+| 配置项 | 典型位置 | 含义 |
+|--------|----------|------|
+| `DESKTOP` / `HOST_DESKTOP` | `build.conf`、`Makefile` | **宿主** Zig 可执行是否跑 Luna GUI（`zig build run`） |
+| `KERNEL_DESKTOP` | `build.conf`、`-Dkernel-desktop` | **来宾内核** 内 `cmd` / `luna` / `none` |
+| `KERNEL_ARCH` | `build.conf`、`-Dkernel-arch` | 内核目标 CPU，与 UEFI ZBM 同架构；多架构见 [MULTI_ARCH_CN.md](MULTI_ARCH_CN.md) |
 
 ## 数据路径（呈现一条）
 

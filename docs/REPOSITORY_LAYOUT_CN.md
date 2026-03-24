@@ -42,11 +42,19 @@ src/
 
 XP x64 / NT 5.2 背景与论坛资料见 [REFERENCES_CN.md](REFERENCES_CN.md)、[NT52_KERNEL_ARCH_CN.md](NT52_KERNEL_ARCH_CN.md)。
 
+## 构建变量速查（宿主 vs 内核）
+
+| 变量 | 作用 |
+|------|------|
+| `DESKTOP` / `HOST_DESKTOP` | 宿主 Luna（`make run-desktop`） |
+| `KERNEL_DESKTOP` | 来宾内核界面（`cmd` / `luna`） |
+| `KERNEL_ARCH` | 内核与 ZBM 目标 ISA，见 [MULTI_ARCH_CN.md](MULTI_ARCH_CN.md) |
+
 ## 可引导内核目录（`src/kernel/` + `boot/`）
 
 | 路径 | 角色 |
 |------|------|
-| `boot/entry.S` | Multiboot2、**512MiB 恒等映射（2MiB 大页）**、GDT、栈、调用 `kernel_main` |
+| `boot/entry.S` | Multiboot2、**1GiB 恒等映射（512×2MiB 大页）**、GDT、栈、调用 `kernel_main` |
 | `boot/isr_x86_64.S` | CPU 向量 0–31 与占位 `isr_stub_reserved` |
 | `boot/idt_load.S` | `lidt`（读取 Zig 导出的 `kernel_idt_descriptor`） |
 | `src/kernel/entry.zig` | `kernel_main`：Phase0 → VGA 提示 |

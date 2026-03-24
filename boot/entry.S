@@ -18,7 +18,7 @@
 
 .set PTE_PRESENT,  1
 .set PTE_WRITE,    2
-/* PD 项上的 PS=1 → 2MiB 大页（恒等映射低 512MiB，覆盖 GRUB 按 ELF 加载的高位物理） */
+/* PD 项上的 PS=1 → 2MiB 大页（恒等映射低 1GiB，覆盖 GRUB 按 ELF 加载的高位物理） */
 .set PTE_PS,       (1 << 7)
 
 .set CR0_PG,   (1 << 31)
@@ -84,10 +84,10 @@ _start:
     movl %eax, (PDPT_ADDR)
     movl $0, (PDPT_ADDR + 4)
 
-    /* PD：256 × 2MiB 大页 = 512MiB 恒等映射（物理 0 起） */
+    /* PD：512 × 2MiB 大页 = 1GiB 恒等映射（物理 0 起；GOP 帧缓冲常在低端以下，PMM 页表亦在此范围） */
     movl $PD_ADDR, %edi
     xorl %esi, %esi
-    movl $256, %ecx
+    movl $512, %ecx
 map2m:
     movl %esi, %eax
     orl  $(PTE_PRESENT | PTE_WRITE | PTE_PS), %eax
@@ -161,7 +161,7 @@ mb2_magic:
 mb2_info:
     .quad 0
 
-/* 栈：256KiB（Zig 调试串口格式化调用链较深，64KiB 易溢出） */
-.space (256 * 1024)
+/* 栈：2MiB（Debug 下 Luna 主循环栈帧极大，256KiB 曾致返回地址破坏与 #PF） */
+.space (2 * 1024 * 1024)
 .global _stack_top
 _stack_top:

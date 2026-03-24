@@ -33,6 +33,11 @@ SECTIONS
         __bss_end = .;
     }
 
+    /* boot/kernel_image_end.S：内核 .bss 之后的占位，符号地址即 PMM 安全起点 */
+    .bss.kernel_tail : ALIGN(16) {
+        *(.bss.kernel_tail)
+    }
+
     /DISCARD/ : {
         *(.eh_frame)
         *(.note.GNU-stack)
